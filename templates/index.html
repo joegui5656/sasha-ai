@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sasha AI</title>
+    <!-- Include Chart.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>Sasha AI</h2>
+    <p style="font-size: 13px; color: #666;">100% Local AI</p>
+    <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
+</div>
+
+<div class="main">
+    <div class="header">
+        <h4>Sasha AI</h4>
+        <button onclick="clearChat()">Clear Chat</button>
+    </div>
+    
+    <div class="chat-box" id="chatBox"></div>
+    
+    <div class="input-container">
+        <div class="preview-area" id="previewArea"></div>
+        <div class="input-area">
+            <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileSelect(event)">
+            <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📁 Attach</button>
+            <input type="text" id="userInput" placeholder="Paste image/file (Ctrl+V) or type a prompt..." onkeydown="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
