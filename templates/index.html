@@ -4,37 +4,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sasha AI</title>
-    <!-- Include Chart.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-<div class="sidebar">
-    <h2>Sasha AI</h2>
-    <p style="font-size: 13px; color: #666;">100% Local AI</p>
-    <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
-</div>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Sasha AI</h2>
+                <span class="badge">100% Local AI</span>
+            </div>
+            <div class="sidebar-controls">
+                <button id="dark-mode-toggle" class="btn btn-secondary">Toggle Dark Mode</button>
+            </div>
+        </aside>
 
-<div class="main">
-    <div class="header">
-        <h4>Sasha AI</h4>
-        <button onclick="clearChat()">Clear Chat</button>
-    </div>
-    
-    <div class="chat-box" id="chatBox"></div>
-    
-    <div class="input-container">
-        <div class="preview-area" id="previewArea"></div>
-        <div class="input-area">
-            <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileSelect(event)">
-            <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📁 Attach</button>
-            <input type="text" id="userInput" placeholder="Paste image/file (Ctrl+V) or type a prompt..." onkeydown="if(event.key==='Enter') sendMessage()">
-            <button onclick="sendMessage()">Send</button>
-        </div>
-    </div>
-</div>
+        <!-- Main Chat Area -->
+        <main class="chat-panel">
+            <header class="chat-header">
+                <button id="menu-toggle" class="btn-icon mobile-only" onclick="toggleSidebar()">☰</button>
+                <h3>Sasha AI</h3>
+                <button id="clear-chat" class="btn btn-danger" onclick="document.getElementById('chat-messages').innerHTML=''">Clear Chat</button>
+            </header>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+            <!-- Scrollable Chat Output -->
+            <section id="chat-messages" class="chat-messages">
+                <div class="ai-message">Hey! I'm Sasha. Drop an image, file, or ask me to generate a chart/table.</div>
+            </section>
+
+            <!-- Attachment Previews -->
+            <div id="preview-container" class="preview-container" style="padding: 10px 20px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
+
+            <!-- Footer Controls -->
+            <footer class="chat-footer">
+                <input type="file" id="file-input" style="display: none;" multiple accept="image/*,.txt,.csv,.json,.pdf,.py,.js">
+                <button id="attach-btn" class="btn btn-attach" onclick="document.getElementById('file-input').click()">
+                    📁 <span class="desktop-only">Attach</span>
+                </button>
+                <input type="text" id="user-input" placeholder="Type a message, paste image, or attach files..." autocomplete="off">
+                <button id="send-btn" class="btn btn-primary">Send</button>
+            </footer>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+        }
+    </script>
 </body>
 </html>

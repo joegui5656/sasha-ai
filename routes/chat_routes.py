@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, render_template, request, jsonify, Response
 from services.llm_service import LLMService
 
@@ -20,3 +21,18 @@ def chat():
 
     stream = llm_service.generate_stream(user_message, file_contexts, images)
     return Response(stream, mimetype="text/event-stream")
+
+@chat_bp.route("/api/ingest", methods=["POST"])
+def ingest():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+        
+    file = request.files['file']
+    upload_dir = "data/uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, file.filename)
+    file.save(file_path)
+    
+    chunks_indexed = llm_service.rag_service.ingest_document(file_path, file.filename)
+    return jsonify({"message": f"Successfully indexed {file.filename}", "chunks": chunks_indexed})

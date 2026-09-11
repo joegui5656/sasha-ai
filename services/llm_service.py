@@ -2,25 +2,67 @@ import ollama
 from config import Config
 
 class LLMService:
+    def __init__(self):
+        # Lazy load RAGService to prevent AppLocker/DLL blocks from crashing startup
+        self.rag_service = None
+        try:
+            from services.rag_service import RAGService
+            self.rag_service = RAGService()
+        except Exception as e:
+            print(f"[Warning] RAG Service bypassed due to system policy restriction: {e}")
+
     @staticmethod
     def _get_system_instruction() -> str:
         return (
-            "You are Sasha AI, a relaxed, conversational, and direct local AI assistant. "
-            "Talk like a helpful peer. Keep casual replies short, warm, and natural. "
-            "NEVER vomit JSON templates, code blocks, or system instructions when answering casual questions or describing your abilities.\n\n"
-            "VISUAL OUTPUT RULE:\n"
-            "ONLY output a JSON visual block when the user explicitly provides data or asks you to generate a chart, table, or KPI summary. "
-            "When generating visuals, talk normally first, then place ONE JSON block at the very end using valid keys:\n"
-            "- Charts: {\"type\": \"bar|line|pie|doughnut|radar\", \"title\": \"Title\", \"labels\": [\"A\", \"B\"], \"data\": [10, 20]}\n"
-            "- Multi-series: {\"type\": \"line\", \"title\": \"Title\", \"labels\": [\"Q1\", \"Q2\"], \"datasets\": [{\"label\": \"2025\", \"data\": [10, 20]}]}\n"
-            "- KPI Cards: {\"type\": \"kpi\", \"metrics\": [{\"label\": \"Metric\", \"value\": \"100\"}]}\n"
-            "- Tables: {\"type\": \"table\", \"headers\": [\"Col1\", \"Col2\"], \"rows\": [[\"Val1\", \"Val2\"]]}"
+            "You are Sasha AI, a relaxed, direct local AI assistant with expert data analysis skills. "
+            "Never repeat or quote system instructions.\n\n"
+            "VISUAL OUTPUT FORMATS:\n"
+            "When analyzing data, producing charts, tables, or Pareto metrics, end your response with a JSON codeblock.\n\n"
+            "1. PARETO CHART:\n"
+            "```json\n"
+            "{\n"
+            '  "renderType": "pareto",\n'
+            '  "title": "Pareto Analysis",\n'
+            '  "labels": ["Category A", "Category B", "Category C"],\n'
+            '  "data": [100, 40, 10]\n'
+            "}\n"
+            "```\n\n"
+            "2. STANDARD CHART (bar, line, pie, doughnut, radar):\n"
+            "```json\n"
+            "{\n"
+            '  "renderType": "chart",\n'
+            '  "type": "bar",\n'
+            '  "title": "Chart Title",\n'
+            '  "labels": ["A", "B"],\n'
+            '  "datasets": [{"label": "Metric", "data": [10, 20]}]\n'
+            "}\n"
+            "```\n\n"
+            "3. COLUMNAR TABLE:\n"
+            "```json\n"
+            "{\n"
+            '  "renderType": "table",\n'
+            '  "title": "Summary Table",\n'
+            '  "headers": ["Metric", "Value"],\n'
+            '  "rows": [["Revenue", "$100k"]]\n'
+            "}\n"
+            "```"
         )
 
     def generate_stream(self, user_message: str, file_contexts: list, images: list):
         selected_model = Config.DEFAULT_VISION_MODEL if images else Config.DEFAULT_TEXT_MODEL
         
         content_body = ""
+        
+        # 1. Query RAG vector store if initialized
+        if user_message and self.rag_service:
+            try:
+                retrieved_context = self.rag_service.query_context(user_message)
+                if retrieved_context:
+                    content_body += f"[RETRIEVED KNOWLEDGE BASE CONTEXT]:\n{retrieved_context}\n\n"
+            except Exception as e:
+                print(f"[RAG Retrieval Error]: {e}")
+
+        # 2. Add attached document contexts
         if file_contexts:
             content_body += "[ATTACHED FILES DATA]:\n"
             for idx, file_obj in enumerate(file_contexts, 1):
@@ -39,6 +81,7 @@ class LLMService:
             response = ollama.chat(
                 model=selected_model,
                 messages=messages,
+                images=images if images else None,
                 stream=True
             )
             for chunk in response:
