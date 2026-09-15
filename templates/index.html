@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sasha AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Chart.js Engine -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- File Parsers -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -14,7 +21,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h2>Sasha AI</h2>
-                <span class="badge">100% Local AI</span>
+                <span class="badge" id="active-model-badge">Local Data & Analytics Intelligence</span>
             </div>
             <div class="sidebar-controls">
                 <button id="dark-mode-toggle" class="btn btn-secondary">Toggle Dark Mode</button>
@@ -31,7 +38,7 @@
 
             <!-- Scrollable Chat Output -->
             <section id="chat-messages" class="chat-messages">
-                <div class="ai-message">Hey! I'm Sasha. Drop an image, file, or ask me to generate a chart/table.</div>
+                <div class="ai-message">Hey! I'm Sasha your AI assistant. How can I help you today?</div>
             </section>
 
             <!-- Attachment Previews -->
@@ -39,7 +46,7 @@
 
             <!-- Footer Controls -->
             <footer class="chat-footer">
-                <input type="file" id="file-input" style="display: none;" multiple accept="image/*,.txt,.csv,.json,.pdf,.py,.js">
+                <input type="file" id="file-input" style="display: none;" multiple accept="image/*,.txt,.csv,.json,.pdf,.xlsx,.xls,.py,.js">
                 <button id="attach-btn" class="btn btn-attach" onclick="document.getElementById('file-input').click()">
                     📁 <span class="desktop-only">Attach</span>
                 </button>
