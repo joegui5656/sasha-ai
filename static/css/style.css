@@ -1,3 +1,38 @@
+/* ==========================================
+   GLOBAL RESET & CSS VARIABLE THEMING
+   ========================================== */
+:root {
+    --bg-app: #f4f6f9;
+    --bg-surface: #ffffff;
+    --bg-chat: #fafafa;
+    --text-primary: #2d3436;
+    --text-secondary: #7f8c8d;
+    --border-color: #e0e0e0;
+    --input-border: #dcdde1;
+    --brand-accent: #6c5ce7;
+    --brand-accent-hover: #5b4bc4;
+    --user-msg-bg: #6c5ce7;
+    --ai-msg-bg: #ffffff;
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --radius-lg: 12px;
+    --radius-md: 8px;
+}
+
+body.dark-mode {
+    --bg-app: #121212;
+    --bg-surface: #1e1e1e;
+    --bg-chat: #181818;
+    --text-primary: #f5f6fa;
+    --text-secondary: #b2bec3;
+    --border-color: #2d2d2d;
+    --input-border: #3d3d3d;
+    --user-msg-bg: #6c5ce7;
+    --ai-msg-bg: #262626;
+    --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -9,7 +44,9 @@ body, html {
     height: 100%;
     width: 100%;
     overflow: hidden;
-    background-color: #f4f6f9;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .app-container {
@@ -18,87 +55,162 @@ body, html {
     width: 100vw;
 }
 
-/* Sidebar Styles */
+/* ==========================================
+   SIDEBAR STYLES
+   ========================================== */
 .sidebar {
     width: 260px;
-    background-color: #ffffff;
-    border-right: 1px solid #e0e0e0;
+    background-color: var(--bg-surface);
+    border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     padding: 20px;
-    transition: transform 0.3s ease;
+    transition: transform 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
     z-index: 100;
 }
 
 .sidebar-header h2 {
     font-size: 1.4rem;
-    color: #2c3e50;
+    color: var(--text-primary);
 }
 
 .badge {
     display: inline-block;
     font-size: 0.75rem;
-    color: #7f8c8d;
+    color: var(--text-secondary);
     margin-top: 4px;
     margin-bottom: 20px;
 }
 
-/* Main Chat Panel - Fills Remainder of Screen */
+/* ==========================================
+   MAIN CHAT PANEL & MESSAGES
+   ========================================== */
 .chat-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background-color: #fafafa;
+    background-color: var(--bg-chat);
+    transition: background-color 0.3s ease;
 }
 
 .chat-header {
     height: 60px;
     padding: 0 20px;
-    background-color: #ffffff;
-    border-bottom: 1px solid #e0e0e0;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-/* Chat Scroll Area */
 .chat-messages {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    scroll-behavior: smooth;
 }
 
 .user-message {
     align-self: flex-end;
     max-width: 75%;
-    background-color: #6c5ce7;
+    width: fit-content;
+    background-color: var(--user-msg-bg);
     color: #ffffff;
     padding: 12px 16px;
-    border-radius: 12px 12px 0px 12px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0px var(--radius-lg);
     word-break: break-word;
+    box-shadow: var(--shadow-sm);
+    font-size: 0.95rem;
+    line-height: 1.4;
 }
 
 .ai-message {
     align-self: flex-start;
-    max-width: 75%;
-    background-color: #ffffff;
-    color: #2d3436;
-    border: 1px solid #e0e0e0;
-    padding: 12px 16px;
-    border-radius: 12px 12px 12px 0px;
+    max-width: 85%;
+    width: fit-content;
+    background-color: var(--ai-msg-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 14px 18px;
+    border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 0px;
     word-break: break-word;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    box-shadow: var(--shadow-sm);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-/* Input Bar */
+/* ==========================================
+   VISUAL CHART, TABLE & EXPORT CONTAINERS
+   ========================================== */
+.chart-wrapper {
+    margin-top: 15px;
+    background: var(--bg-surface);
+    padding: 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    position: relative;
+    width: 100%;
+    height: 350px;
+    box-sizing: border-box;
+    box-shadow: var(--shadow-sm);
+}
+
+.table-container {
+    margin-top: 15px;
+    overflow-x: auto;
+    background: var(--bg-surface);
+    padding: 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Dynamic table styling for light and dark modes */
+.table-container table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    text-align: left;
+}
+
+.table-container th {
+    padding: 8px;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.table-container td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+/* ==========================================
+   INPUT FOOTER & ATTACHMENT PREVIEWS
+   ========================================== */
+.chat-footer-wrapper {
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+#preview-container {
+    padding: 8px 20px 0 20px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .chat-footer {
     padding: 15px 20px;
-    background-color: #ffffff;
-    border-top: 1px solid #e0e0e0;
     display: flex;
     gap: 10px;
     align-items: center;
@@ -107,34 +219,46 @@ body, html {
 #user-input {
     flex: 1;
     padding: 12px 16px;
-    border: 1px solid #dcdde1;
-    border-radius: 8px;
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
     font-size: 0.95rem;
     outline: none;
+    transition: border-color 0.2s ease, background-color 0.3s ease, color 0.3s ease;
 }
 
 #user-input:focus {
-    border-color: #6c5ce7;
+    border-color: var(--brand-accent);
 }
 
-/* Buttons */
+/* ==========================================
+   BUTTONS & CONTROLS
+   ========================================== */
 .btn {
     padding: 10px 16px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-weight: 600;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.btn:hover {
+    opacity: 0.9;
 }
 
 .btn-primary { background-color: #54a0ff; color: white; }
-.btn-secondary { background-color: #6c5ce7; color: white; width: 100%; }
-.btn-attach { background-color: #8c7ae6; color: white; }
+.btn-secondary { background-color: var(--brand-accent); color: white; width: 100%; }
+.btn-attach { background-color: #8c7ae6; color: white; display: inline-flex; align-items: center; gap: 6px; }
 .btn-danger { background-color: #ff6b6b; color: white; }
-.btn-icon { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+.btn-icon { background: none; border: none; font-size: 1.5rem; color: var(--text-primary); cursor: pointer; }
 
 .mobile-only { display: none; }
 
-/* Responsive Media Queries for Mobile */
+/* ==========================================
+   RESPONSIVE MEDIA QUERIES
+   ========================================== */
 @media (max-width: 768px) {
     .sidebar {
         position: absolute;
@@ -142,7 +266,7 @@ body, html {
         left: 0;
         height: 100%;
         transform: translateX(-100%);
-        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        box-shadow: var(--shadow-md);
     }
 
     .sidebar.active {
@@ -153,6 +277,11 @@ body, html {
     .desktop-only { display: none; }
 
     .user-message, .ai-message {
-        max-width: 90%;
+        max-width: 92%;
+    }
+
+    .chart-wrapper {
+        height: 280px;
+        padding: 8px;
     }
 }

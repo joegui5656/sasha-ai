@@ -1,5 +1,6 @@
 let attachedFiles = [];
 let attachedImages = [];
+let conversationHistory = []; // Multi-turn history tracking
 
 // Configure PDF.js Worker
 if (typeof pdfjsLib !== 'undefined') {
@@ -12,13 +13,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('file-input');
     const chatContainer = document.getElementById('chat-messages');
 
+    // Theme & Sidebar Controls
+    const themeToggleBtn = document.getElementById('theme-toggle') || document.querySelector('.btn-secondary');
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+
+        if (localStorage.getItem('theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+        }
+    }
+
+    const menuToggleBtn = document.getElementById('menu-toggle');
+    const sidebar = document.querySelector('.sidebar');
+    if (menuToggleBtn && sidebar) {
+        menuToggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+        });
+    }
+
     if (sendBtn) sendBtn.addEventListener('click', sendMessage);
     if (userInput) {
         userInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
         
-        // Clipboard Image Paste Handler
         userInput.addEventListener('paste', (e) => {
             const items = (e.clipboardData || e.originalEvent.clipboardData).items;
             for (let item of items) {
@@ -68,13 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }, false);
 });
 
-// ==========================================
-// MULTI-FORMAT FILE PARSING ENGINE
-// ==========================================
-
+// MULTI-FILE PARSING ENGINE
 function handleFileUpload(file) {
     if (!file) return;
-    
     const extension = file.name.split('.').pop().toLowerCase();
 
     if (file.type.startsWith('image/')) {
@@ -109,7 +127,7 @@ function processCSVFile(file) {
         header: true,
         skipEmptyLines: true,
         complete: function (results) {
-            const summary = `CSV Summary (${results.data.length} rows):\nHeaders: ${results.meta.fields.join(', ')}\nSample Data:\n` + 
+            const summary = `CSV Summary [${file.name}] (${results.data.length} rows):\nHeaders: ${results.meta.fields.join(', ')}\nSample Data:\n` + 
                             JSON.stringify(results.data.slice(0, 15), null, 2);
             
             attachedFiles.push({
@@ -131,7 +149,7 @@ function processExcelFile(file) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         
-        let extractedText = `Excel Workbook: ${file.name}\nSheets: ${workbook.SheetNames.join(', ')}\n\n`;
+        let extractedText = `Excel Workbook [${file.name}]\nSheets: ${workbook.SheetNames.join(', ')}\n\n`;
 
         workbook.SheetNames.forEach(sheetName => {
             const sheet = workbook.Sheets[sheetName];
@@ -159,7 +177,7 @@ function processPDFFile(file) {
         const typedarray = new Uint8Array(e.target.result);
         
         pdfjsLib.getDocument(typedarray).promise.then(async (pdf) => {
-            let fullText = `PDF Document: ${file.name} (${pdf.numPages} pages)\n\n`;
+            let fullText = `PDF Document [${file.name}] (${pdf.numPages} pages)\n\n`;
             
             const maxPages = Math.min(pdf.numPages, 5);
             for (let i = 1; i <= maxPages; i++) {
@@ -192,7 +210,6 @@ function processTextFile(file) {
     reader.readAsText(file);
 }
 
-// Attachment Removal Controls
 function removeFile(index) {
     attachedFiles.splice(index, 1);
     renderPreviews();
@@ -229,157 +246,385 @@ function renderPreviews() {
     });
 }
 
-// ==========================================
-// VISUAL RENDERING ENGINE
-// ==========================================
-
-function renderVisualOutputs(text, containerElement) {
-    // 1. Extract ALL JSON blocks contained in ```json ``` codeblocks or raw braces
-    const jsonMatches = [...text.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
+// EXPORT SERVICE (MULTI-CHART & MERMAID SVG CAPTURE)
+async function downloadReport(fileType, title, insightsText, container) {
+    const insightsArray = insightsText.split('\n').filter(line => line.trim().length > 0);
     
-    if (jsonMatches.length === 0) return;
+    let chartImages = [];
+    let tableDataList = [];
 
-    // Clean text container: Strip out ALL raw JSON strings so no code leaks into the message bubble
-    let cleanText = text;
-    jsonMatches.forEach(match => {
-        cleanText = cleanText.replace(match[0], '');
-    });
-    containerElement.innerText = cleanText.trim();
-
-    // 2. Loop through every detected JSON payload and render its corresponding table/chart
-    jsonMatches.forEach(match => {
-        try {
-            let jsonString = match[1].trim().replace(/,\s*([\]}])/g, '$1'); // Auto-repair trailing commas
-            const payload = JSON.parse(jsonString);
-
-            // A. PARETO CHART AUTO-CALCULATION ENGINE
-            if (payload.renderType === 'pareto' || payload.type === 'pareto') {
-                const sortedData = payload.labels.map((label, i) => ({
-                    label: label,
-                    value: payload.data[i]
-                })).sort((a, b) => b.value - a.value);
-
-                const labels = sortedData.map(d => d.label);
-                const counts = sortedData.map(d => d.value);
-                const total = counts.reduce((acc, v) => acc + v, 0);
-
-                let currentSum = 0;
-                const cumPercentages = counts.map(v => {
-                    currentSum += v;
-                    return parseFloat(((currentSum / total) * 100).toFixed(1));
-                });
-
-                payload.renderType = 'chart';
-                payload.type = 'bar';
-                payload.labels = labels;
-                payload.datasets = [
-                    { label: 'Count', data: counts, type: 'bar', yAxisID: 'y' },
-                    { label: 'Cumulative %', data: cumPercentages, type: 'line', yAxisID: 'y1' }
-                ];
+    if (container) {
+        // 1. Capture Canvas Charts
+        const canvases = container.querySelectorAll('canvas');
+        canvases.forEach(canvas => {
+            try {
+                chartImages.push(canvas.toDataURL('image/png'));
+            } catch (e) {
+                console.error("Failed to extract canvas image:", e);
             }
+        });
 
-            // B. COLUMNAR DATA TABLE RENDERING
-            if (payload.renderType === 'table' && payload.headers && payload.rows) {
-                const tableContainer = document.createElement('div');
-                tableContainer.style.cssText = 'margin-top: 15px; overflow-x: auto; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0;';
+        // 2. Capture Mermaid SVG Diagrams as Base64 Images
+        const svgElements = container.querySelectorAll('.diagram-wrapper svg');
+        for (let svg of svgElements) {
+            try {
+                const svgData = new XMLSerializer().serializeToString(svg);
+                const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(svgBlob);
                 
-                let html = `<h4 style="margin-bottom: 8px; color: #2d3436;">${payload.title || 'Summary Table'}</h4>`;
-                html += '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; text-align: left;"><thead><tr style="background: #f4f6f9;">';
-                
-                payload.headers.forEach(h => {
-                    html += `<th style="padding: 8px; border-bottom: 2px solid #ddd;">${h}</th>`;
-                });
-                html += '</tr></thead><tbody>';
-
-                payload.rows.forEach(row => {
-                    html += '<tr>';
-                    row.forEach(cell => {
-                        html += `<td style="padding: 8px; border-bottom: 1px solid #eee;">${cell}</td>`;
-                    });
-                    html += '</tr>';
-                });
-                html += '</tbody></table>';
-
-                tableContainer.innerHTML = html;
-                containerElement.appendChild(tableContainer);
-            }
-
-            // C. CHART.JS RENDERING (BAR, PIE, LINE, DUAL-AXIS)
-            if (payload.renderType === 'chart' && payload.labels && payload.datasets) {
-                const chartWrapper = document.createElement('div');
-                chartWrapper.style.cssText = 'margin-top: 15px; background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; position: relative; width: 100%; min-height: 320px;';
-                
-                const canvas = document.createElement('canvas');
-                chartWrapper.appendChild(canvas);
-                containerElement.appendChild(chartWrapper);
-
-                const colors = [
-                    'rgba(108, 92, 231, 0.7)',
-                    'rgba(255, 107, 107, 0.7)',
-                    'rgba(84, 160, 255, 0.7)',
-                    'rgba(29, 209, 161, 0.7)',
-                    'rgba(254, 202, 87, 0.7)'
-                ];
-
-                const formattedDatasets = payload.datasets.map((ds, idx) => {
-                    const isLine = ds.type === 'line';
-                    return {
-                        label: ds.label || `Metric ${idx + 1}`,
-                        data: ds.data,
-                        type: ds.type || payload.type || 'bar',
-                        backgroundColor: isLine ? 'rgba(255, 107, 107, 0.2)' : colors[idx % colors.length],
-                        borderColor: isLine ? '#ff6b6b' : colors[idx % colors.length].replace('0.7', '1'),
-                        borderWidth: 2,
-                        yAxisID: ds.yAxisID || 'y',
-                        tension: 0.2
+                const img = new Image();
+                await new Promise((resolve) => {
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const bbox = svg.getBBox ? svg.getBBox() : { width: 800, height: 400 };
+                        canvas.width = Math.max(bbox.width + 40, 800);
+                        canvas.height = Math.max(bbox.height + 40, 400);
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = "#1e1e2e"; // Dark slate background matching PPT theme
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 20, 20);
+                        
+                        chartImages.push(canvas.toDataURL('image/png'));
+                        URL.revokeObjectURL(url);
+                        resolve();
                     };
+                    img.onerror = () => {
+                        URL.revokeObjectURL(url);
+                        resolve();
+                    };
+                    img.src = url;
                 });
-
-                const hasDualAxis = payload.datasets.some(ds => ds.yAxisID === 'y1');
-
-                new Chart(canvas, {
-                    type: payload.type || 'bar',
-                    data: {
-                        labels: payload.labels,
-                        datasets: formattedDatasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: { display: true, text: payload.title || 'Data Analysis' },
-                            legend: { display: true, position: 'bottom' }
-                        },
-                        scales: payload.type === 'pie' || payload.type === 'doughnut' ? {} : {
-                            y: {
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: { display: true, text: 'Frequency / Count' }
-                            },
-                            y1: hasDualAxis ? {
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                min: 0,
-                                max: 100,
-                                grid: { drawOnChartArea: false },
-                                title: { display: true, text: 'Cumulative %' }
-                            } : undefined
-                        }
-                    }
-                });
+            } catch (err) {
+                console.error("Failed to convert SVG diagram to image:", err);
             }
-        } catch (err) {
-            console.error("Failed to parse visual payload block:", err);
         }
-    });
+
+        // 3. Extract Rendered Tables
+        const tables = container.querySelectorAll('table');
+        tables.forEach((table, idx) => {
+            const headers = Array.from(table.querySelectorAll('th')).map(th => th.innerText.trim());
+            const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
+                return Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
+            });
+            const tableTitleHeader = table.closest('.table-container')?.querySelector('h4')?.innerText;
+
+            tableDataList.push({
+                title: tableTitleHeader || `Summary Table ${idx + 1}`,
+                headers: headers,
+                rows: rows
+            });
+        });
+    }
+
+    try {
+        const response = await fetch('/api/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file_type: fileType,
+                title: title || 'Sasha AI Executive Report',
+                insights: insightsArray,
+                table_data_list: tableDataList,
+                table_data: tableDataList.length > 0 ? tableDataList[0] : null,
+                chart_images_b64: chartImages,
+                chart_image_b64: chartImages.length > 0 ? chartImages[0] : null
+            })
+        });
+
+        if (!response.ok) throw new Error("Export failed");
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ext = fileType === 'word' ? 'docx' : fileType === 'powerpoint' ? 'pptx' : fileType === 'excel' ? 'xlsx' : 'pdf';
+        
+        a.href = url;
+        a.download = `Sasha_Executive_Report.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error("Failed to generate multi-chart export file:", err);
+    }
 }
 
-// ==========================================
-// CHAT TRANSMISSION ENGINE
-// ==========================================
+function renderExportToolbar(container, title, textContent) {
+    const toolbar = document.createElement('div');
+    toolbar.style.cssText = 'margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--border-color, #e2e8f0); display: flex; gap: 8px; flex-wrap: wrap; align-items: center;';
+    
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size: 0.75rem; color: var(--text-secondary, #636e72); font-weight: bold;';
+    label.innerText = 'Export Full Report:';
+    toolbar.appendChild(label);
 
+    const formats = [
+        { name: 'Word (.docx)', type: 'word', bg: '#2b579a' },
+        { name: 'PPTX (.pptx)', type: 'powerpoint', bg: '#d24726' },
+        { name: 'Excel (.xlsx)', type: 'excel', bg: '#217346' },
+        { name: 'PDF (.pdf)', type: 'pdf', bg: '#d9534f' }
+    ];
+
+    formats.forEach(fmt => {
+        const btn = document.createElement('button');
+        btn.style.cssText = `background: ${fmt.bg}; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: opacity 0.2s;`;
+        btn.innerText = fmt.name;
+        btn.onmouseover = () => btn.style.opacity = '0.85';
+        btn.onmouseout = () => btn.style.opacity = '1';
+        btn.onclick = () => downloadReport(fmt.type, title, textContent, container);
+        toolbar.appendChild(btn);
+    });
+
+    container.appendChild(toolbar);
+}
+
+// ADVANCED VISUAL & DIAGRAM RENDERING ENGINE
+function renderVisualOutputs(text, containerElement) {
+    let jsonMatches = [...text.matchAll(/```json\s*([\s\S]*?)\s*(```|$)/g)];
+    let cleanText = text
+        .replace(/```json[\s\S]*?(```|$)/g, '')
+        .replace(/(Here is|Here's) (a|the) JSON (block|payload|data).*?:?/gi, '')
+        .replace(/Here is (a|the) chart payload.*?:?/gi, '')
+        .trim();
+
+    containerElement.innerHTML = formatMarkdownText(cleanText);
+
+    let extractedPayloads = [];
+
+    jsonMatches.forEach(match => {
+        try {
+            let rawMatch = match[1].trim();
+            let firstBrace = rawMatch.indexOf('{');
+            let lastBrace = rawMatch.lastIndexOf('}');
+            
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                rawMatch = rawMatch.substring(firstBrace, lastBrace + 1);
+            }
+
+            let jsonString = rawMatch.replace(/,\s*([\]}])/g, '$1');
+            extractedPayloads.push(JSON.parse(jsonString));
+        } catch (err) {
+            console.error("JSON parse error:", err);
+        }
+    });
+
+    const userPrompt = document.querySelector('.user-message:last-of-type')?.innerText || '';
+    const promptLower = userPrompt.toLowerCase();
+    
+    const explicitFileRequest = promptLower.includes('generate file') || 
+                                promptLower.includes('export') || 
+                                promptLower.includes('download') || 
+                                promptLower.includes('create document') || 
+                                promptLower.includes('make ppt');
+
+    let lastTablePayload = null;
+    let reportTitle = "Executive Analysis";
+
+    extractedPayloads.forEach((payload, pIdx) => {
+        if (payload.title) reportTitle = payload.title;
+
+        // Pareto Transformation
+        const isPareto = payload.renderType === 'pareto' || (payload.title && payload.title.toLowerCase().includes('pareto'));
+        if (isPareto && payload.labels && (payload.data || (payload.datasets && payload.datasets[0].data))) {
+            const rawData = payload.data || payload.datasets[0].data;
+            const sortedData = payload.labels.map((label, i) => ({
+                label: label,
+                value: Number(rawData[i]) || 0
+            })).sort((a, b) => b.value - a.value);
+
+            const labels = sortedData.map(d => d.label);
+            const counts = sortedData.map(d => d.value);
+            const total = counts.reduce((acc, v) => acc + v, 0) || 1;
+
+            let currentSum = 0;
+            const cumPercentages = counts.map(v => {
+                currentSum += v;
+                return parseFloat(((currentSum / total) * 100).toFixed(1));
+            });
+
+            payload.renderType = 'chart';
+            payload.type = 'bar';
+            payload.labels = labels;
+            payload.datasets = [
+                { label: 'Count', data: counts, type: 'bar', yAxisID: 'y' },
+                { label: 'Cumulative %', data: cumPercentages, type: 'line', yAxisID: 'y1' }
+            ];
+        }
+
+        // Waterfall Transformation
+        const isWaterfall = payload.renderType === 'waterfall' || (payload.title && payload.title.toLowerCase().includes('waterfall'));
+        if (isWaterfall && payload.labels && payload.data) {
+            const rawValues = payload.data;
+            const isTotalFlags = payload.isTotal || [];
+            let runningTotal = 0;
+            const floatData = [];
+            const bgColors = [];
+
+            rawValues.forEach((val, i) => {
+                const isTotal = isTotalFlags[i] || false;
+                if (isTotal) {
+                    floatData.push([0, runningTotal]);
+                    bgColors.push('rgba(108, 92, 231, 0.85)');
+                } else {
+                    const start = runningTotal;
+                    runningTotal += val;
+                    floatData.push([start, runningTotal]);
+                    bgColors.push(val >= 0 ? 'rgba(46, 204, 113, 0.85)' : 'rgba(231, 76, 60, 0.85)');
+                }
+            });
+
+            payload.renderType = 'chart';
+            payload.type = 'bar';
+            payload.datasets = [{
+                label: 'Financial Flow',
+                data: floatData,
+                backgroundColor: bgColors,
+                borderWidth: 1
+            }];
+        }
+
+        // Table & Heatmap Engine
+        if ((payload.renderType === 'table' || payload.renderType === 'heatmap') && payload.headers && payload.rows) {
+            lastTablePayload = payload;
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-container';
+            
+            let html = `<h4 style="margin-bottom: 8px;">${payload.title || 'Data Matrix Summary'}</h4><table><thead><tr>`;
+            payload.headers.forEach(h => { html += `<th>${h}</th>`; });
+            html += '</tr></thead><tbody>';
+            
+            payload.rows.forEach(row => {
+                html += '<tr>';
+                row.forEach((cell, idx) => { 
+                    const num = parseFloat(cell);
+                    let bgStyle = '';
+                    if (!isNaN(num) && idx > 0 && (payload.renderType === 'heatmap' || (payload.title && payload.title.toLowerCase().includes('heatmap')))) {
+                        const alpha = Math.min(Math.max(num / 100, 0.15), 0.85);
+                        bgStyle = ` style="background-color: rgba(108, 92, 231, ${alpha}); color: #fff; font-weight: bold; text-align: center;"`;
+                    }
+                    html += `<td${bgStyle}>${cell}</td>`; 
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+
+            tableContainer.innerHTML = html;
+            containerElement.appendChild(tableContainer);
+        }
+
+        // Diagram, Flowchart & Roadmap Engine (Mermaid.js)
+        if (payload.renderType === 'diagram' && payload.code) {
+            const diagramWrapper = document.createElement('div');
+            diagramWrapper.className = 'diagram-wrapper';
+            diagramWrapper.style.cssText = 'padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-top: 12px; text-align: center; overflow-x: auto;';
+
+            if (payload.title) {
+                const titleEl = document.createElement('h4');
+                titleEl.style.cssText = 'margin-bottom: 12px; color: var(--text-primary); font-size: 1rem;';
+                titleEl.innerText = payload.title;
+                diagramWrapper.appendChild(titleEl);
+            }
+
+            const mermaidDiv = document.createElement('div');
+            mermaidDiv.className = 'mermaid';
+            mermaidDiv.id = `mermaid-node-${Date.now()}-${pIdx}`;
+            mermaidDiv.textContent = payload.code;
+            diagramWrapper.appendChild(mermaidDiv);
+            containerElement.appendChild(diagramWrapper);
+
+            setTimeout(() => {
+                try {
+                    if (typeof mermaid !== 'undefined') {
+                        mermaid.run({ nodes: [mermaidDiv] });
+                    }
+                } catch (err) {
+                    console.error("Mermaid rendering error:", err);
+                }
+            }, 100);
+        }
+
+        // Chart.js Engine (Bar, Line, Pie, Donut, Scatter, Area)
+        if ((payload.renderType === 'chart' || payload.type) && payload.datasets) {
+            const chartWrapper = document.createElement('div');
+            chartWrapper.className = 'chart-wrapper';
+            
+            const canvas = document.createElement('canvas');
+            chartWrapper.appendChild(canvas);
+            containerElement.appendChild(chartWrapper);
+
+            const palette = [
+                'rgba(108, 92, 231, 0.8)',
+                'rgba(255, 107, 107, 0.8)',
+                'rgba(84, 160, 255, 0.8)',
+                'rgba(29, 209, 161, 0.8)',
+                'rgba(254, 202, 87, 0.8)',
+                'rgba(155, 89, 182, 0.8)'
+            ];
+
+            const isPieOrDonut = payload.type === 'pie' || payload.type === 'doughnut';
+
+            const formattedDatasets = payload.datasets.map((ds, idx) => {
+                return {
+                    label: ds.label || `Series ${idx + 1}`,
+                    data: ds.data,
+                    type: ds.type || payload.type || 'bar',
+                    backgroundColor: isPieOrDonut ? palette : (ds.backgroundColor || palette[idx % palette.length]),
+                    borderColor: isPieOrDonut ? '#ffffff' : (ds.borderColor || palette[idx % palette.length].replace('0.8', '1')),
+                    borderWidth: 2,
+                    yAxisID: ds.yAxisID || 'y',
+                    tension: 0.35
+                };
+            });
+
+            const isStacked = payload.stacked || false;
+            const isScatter = payload.type === 'scatter';
+
+            const newChart = new Chart(canvas, {
+                type: payload.type || 'bar',
+                data: {
+                    labels: isScatter ? undefined : payload.labels,
+                    datasets: formattedDatasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    plugins: {
+                        title: { display: true, text: payload.title || 'Data Analysis' },
+                        legend: { display: true, position: 'bottom' }
+                    },
+                    scales: isPieOrDonut ? {} : (isScatter ? {
+                        x: { type: 'linear', position: 'bottom' },
+                        y: { type: 'linear', position: 'left' }
+                    } : {
+                        x: { stacked: isStacked },
+                        y: {
+                            stacked: isStacked,
+                            type: 'linear',
+                            position: 'left'
+                        },
+                        y1: payload.datasets.some(ds => ds.yAxisID === 'y1') ? {
+                            type: 'linear',
+                            position: 'right',
+                            min: 0,
+                            max: 100,
+                            grid: { drawOnChartArea: false }
+                        } : undefined
+                    })
+                }
+            });
+
+            canvas.chartInstance = newChart;
+        }
+    });
+
+    if (extractedPayloads.length > 0 || explicitFileRequest) {
+        renderExportToolbar(containerElement, reportTitle, cleanText);
+    }
+}
+
+// CHAT TRANSMISSION & HISTORY TRACKING
 async function sendMessage() {
     const inputField = document.getElementById('user-input');
     const chatContainer = document.getElementById('chat-messages');
@@ -392,6 +637,8 @@ async function sendMessage() {
     userDiv.className = 'user-message';
     userDiv.innerText = message || "(Attached inputs for analysis)";
     chatContainer.appendChild(userDiv);
+
+    conversationHistory.push({ role: 'user', content: message });
 
     inputField.value = '';
 
@@ -407,6 +654,7 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: message,
+                history: conversationHistory,
                 file_contexts: attachedFiles,
                 images: attachedImages
             })
@@ -430,17 +678,43 @@ async function sendMessage() {
             
             for (let line of lines) {
                 if (line.startsWith('data: ')) {
-                    fullText += line.replace('data: ', '');
-                    aiDiv.innerText = fullText;
+                    let rawChunk = line.replace('data: ', '');
+                    let unescapedChunk = rawChunk.replace(/\\n/g, '\n');
+                    fullText += unescapedChunk;
+                    
+                    let displayStreamText = fullText
+                        .replace(/```json[\s\S]*?(```|$)/g, '')
+                        .replace(/(Here is|Here's) (a|the) JSON (block|payload|data).*?:?/gi, '')
+                        .replace(/Here is (a|the) chart payload.*?:?/gi, '')
+                        .trim();
+                    
+                    aiDiv.innerHTML = formatMarkdownText(displayStreamText || "...");
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
             }
         }
 
         renderVisualOutputs(fullText, aiDiv);
+        
+        const cleanAssistantContent = fullText.replace(/```json[\s\S]*?```/g, '').trim();
+        conversationHistory.push({ role: 'assistant', content: cleanAssistantContent });
 
     } catch (err) {
         aiDiv.innerText = "Error connecting to server.";
         console.error(err);
     }
+}
+
+// Lightweight Markdown parser for clean UI rendering
+function formatMarkdownText(text) {
+    if (!text) return '';
+    let formatted = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\* /g, '<br>• ')
+        .replace(/\n- /g, '<br>• ')
+        .replace(/\n/g, '<br>');
+    return formatted;
 }

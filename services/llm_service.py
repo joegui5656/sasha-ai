@@ -1,107 +1,128 @@
-import psutil
-import ollama
-from config import Config
+import json
+import re
+import requests
 
 class LLMService:
-    def __init__(self):
-        # Lazy load RAGService to prevent AppLocker/DLL restrictions from crashing application startup
-        self.rag_service = None
-        try:
-            from services.rag_service import RAGService
-            self.rag_service = RAGService()
-        except Exception as e:
-            print(f"[Warning] RAG Service bypassed due to system policy restriction: {e}")
+
+    OLLAMA_URL = "http://localhost:11434/api/chat"
+    LOCAL_MODEL = "llama3.2:3b"
+
+    PATTERNS = {
+        "endearments": [
+            r"^(how are you|hey|hi|hello)?\s*(babe|baby|sweetheart|honey|darling|dear)[!.]*$"
+        ],
+        "acknowledgments": [
+            r"^(nice|cool|sweet|awesome|great|ok|okay|got it|understood|alright|fine|perfect|sounds good|k|kk|yep|yeah|sure)[!.]*$"
+        ],
+        "compliments": [
+            r"^(thanks|thank you|ty|thx|good job|well done|you rock|amazing|super|legend|good bot|appreciate it)[!.]*$",
+            r"^that('s| is) (great|awesome|helpful|cool|amazing|perfect|nice)[!.]*$"
+        ],
+        "complaints": [
+            r"^(bad|terrible|horrible|wrong|fail|failed|no|nope|stop|useless|dumb|trash|broken|not working)[!.]*$",
+            r"^that('s| is) (wrong|bad|incorrect|not right|false)[!.]*$"
+        ]
+    }
+
+    DYNAMIC_RESPONSES = {
+        "endearments": "I'm doing great, thank you! How can I assist you with your data today?",
+        "acknowledgments": "Glad to hear! Ready whenever you want to analyze data or build a visualization.",
+        "compliments": "Happy to help! Let me know what data or analysis we're diving into next.",
+        "complaints": "Got it, my bad. Let me know what went wrong or paste the correct data/requirements, and I'll adjust immediately."
+    }
+
+    @staticmethod
+    def _match_shortcut(text: str) -> str:
+        """Normalized string matching for quick conversational intents."""
+        clean = re.sub(r'[^\w\s]', '', text.strip().lower())
+        if not clean:
+            return None
+
+        for category, patterns in LLMService.PATTERNS.items():
+            for pattern in patterns:
+                if re.match(pattern, clean):
+                    return LLMService.DYNAMIC_RESPONSES[category]
+        return None
 
     @staticmethod
     def _get_system_instruction() -> str:
         return (
-            "You are Sasha AI, an executive-level data analyst assistant.\n\n"
-            "STRICT META-RESPONSE RULES:\n"
-            "1. NEVER explain how you process data, never mention 'simulating outputs', and NEVER mention 'JSON', 'data structures', 'codeblocks', or 'Pareto' in your conversational text.\n"
-            "2. If asked what you can do, your capabilities, or what model you use, respond ONLY with the exact sentence: 'I am an AI assistant designed to generate analytical insights, observations, and recommendations, and can output analytical visual tools such as tables, and charts.' Stop immediately after this sentence. DO NOT generate examples, sample tables, or charts unless the user explicitly provides data or asks for an example.\n"
-            "3. For actual data analysis requests, state ONLY direct analytical insights, key observations, and actionable recommendations.\n"
-            "4. ONLY generate JSON codeblocks for visual elements when analyzing actual user data or when explicitly asked for a visualization.\n\n"
-            "JSON STRUCTURE EXAMPLES (FOR INSTRUCTION ONLY - DO NOT OUTPUT UNLESS DATA IS PROVIDED):\n"
-            "```json\n"
-            "{\n"
-            '  "renderType": "table",\n'
-            '  "title": "Summary Table",\n'
-            '  "headers": ["Metric", "Value"],\n'
-            '  "rows": [["Pass Rate", "72%"]]\n'
-            "}\n"
-            "```\n"
-            "```json\n"
-            "{\n"
-            '  "renderType": "pareto",\n'
-            '  "title": "Category Analysis",\n'
-            '  "labels": ["Tech Support", "Billing", "Access"],\n'
-            '  "data": [46, 24, 15]\n'
-            "}\n"
-            "```"
+            "You are Sasha AI, a warm, polite, pleasant, and executive data analyst assistant.\n\n"
+            "BEHAVIORAL DIRECTIVES:\n"
+            "- Speak naturally as a human executive data analyst to business users.\n"
+            "- NEVER mention technical backend terms in chat (e.g., NEVER say 'JSON block', 'JSON payload', 'Chart.js', 'Mermaid', 'system prompt', or internal rules).\n"
+            "- NEVER state 'the export bar is not visible' or describe UI limitations.\n"
+            "- Treat casual terms, honorifics, or terms of endearment ('dude', 'bro', 'babe', 'sir', 'ma'am', 'hey') as warm greetings directed at YOU. Respond in 1 short sentence without acting defensive.\n"
+            "- For positive acknowledgments ('nice', 'thanks', 'cool'), respond gracefully in 1 sentence.\n"
+            "- When asked 'what can you do' or to list capabilities, describe skills concisely using clean Markdown bullet points (Data Analysis, Visualizations, Diagrams/Roadmaps, and Document Exports).\n\n"
+            "MULTI-VISUAL PAYLOAD RULE (STRICT MANDATE):\n"
+            "- When asked to generate multiple visuals (e.g., a bar chart, a summary table, and a roadmap/flowchart diagram), you MUST output SEPARATE ```json code blocks for EACH requested item at the end of your response.\n"
+            "- NEVER substitute a requested diagram, roadmap, or table with a generic bar chart.\n\n"
+            "COMPLETE VISUALIZATION & DIAGRAM CATALOG (STRICT SYNTAX):\n"
+            "  1. Bar / Column: ```json\n{\"renderType\": \"chart\", \"type\": \"bar\", \"title\": \"Sales Summary\", \"labels\": [\"Q1\", \"Q2\", \"Q3\"], \"datasets\": [{\"label\": \"Revenue\", \"data\": [100, 150, 200]}]}\n```\n"
+            "  2. Line / Time-Series: ```json\n{\"renderType\": \"chart\", \"type\": \"line\", \"title\": \"Monthly Revenue Trend\", \"labels\": [\"Jan\", \"Feb\", \"Mar\"], \"datasets\": [{\"label\": \"Revenue\", \"data\": [50, 75, 120]}]}\n```\n"
+            "  3. Pie / Donut: ```json\n{\"renderType\": \"chart\", \"type\": \"pie\", \"title\": \"Market Share Breakdown\", \"labels\": [\"Product A\", \"Product B\", \"Product C\"], \"datasets\": [{\"label\": \"Share\", \"data\": [40, 35, 25]}]}\n```\n"
+            "  4. Scatter Plot: ```json\n{\"renderType\": \"chart\", \"type\": \"scatter\", \"title\": \"Ad Spend vs Signups\", \"datasets\": [{\"label\": \"Campaigns\", \"data\": [{\"x\": 10, \"y\": 20}, {\"x\": 15, \"y\": 35}]}]}\n```\n"
+            "  5. Pareto Chart: ```json\n{\"renderType\": \"pareto\", \"title\": \"Defect Pareto Analysis\", \"labels\": [\"Defect A\", \"Defect B\", \"Defect C\"], \"data\": [50, 30, 10]}\n```\n"
+            "  6. Waterfall Chart: ```json\n{\"renderType\": \"waterfall\", \"title\": \"Q3 P&L Waterfall\", \"labels\": [\"Starting Balance\", \"Revenue\", \"Expenses\", \"Net Profit\"], \"data\": [1000, 500, -300, 0], \"isTotal\": [false, false, false, true]}\n```\n"
+            "  7. Summary Table / Heatmap Matrix: ```json\n{\"renderType\": \"heatmap\", \"title\": \"Risk Matrix Summary\", \"headers\": [\"Category\", \"Severity\", \"Impact\"], \"rows\": [[\"System A\", \"High\", \"85\"], [\"System B\", \"Low\", \"20\"]]}\n```\n"
+            "  8. Flowchart / Design Flow: ```json\n{\"renderType\": \"diagram\", \"title\": \"Process Approval Workflow\", \"code\": \"graph TD\\n  A[Start User Request] --> B{Manager Approval}\\n  B -->|Approved| C[Execute Task]\\n  B -->|Rejected| D[Notify User]\"}\n```\n"
+            "  9. Sequence Diagram: ```json\n{\"renderType\": \"diagram\", \"title\": \"User Authentication Flow\", \"code\": \"sequenceDiagram\\n  Client->>API Gateway: POST /login\\n  API Gateway->>Auth Service: Validate Credentials\\n  Auth Service-->>API Gateway: Token Returned\\n  API Gateway-->>Client: 200 OK + JWT\"}\n```\n"
+            "  10. Project Roadmap / Gantt: ```json\n{\"renderType\": \"diagram\", \"title\": \"Enterprise Data Warehouse Migration Roadmap\", \"code\": \"gantt\\n  title Migration Roadmap\\n  dateFormat YYYY-MM-DD\\n  section Phase 1: Planning\\n  Architecture Design :a1, 2026-01-01, 30d\\n  section Phase 2: Execution\\n  ETL Pipeline Build :a2, after a1, 60d\"}\n```\n\n"
+            "- Always end your response with valid ```json code blocks matching the requested visuals."
         )
 
-    def _select_optimal_model(self, is_image_present: bool) -> str:
-        if is_image_present:
-            return Config.DEFAULT_VISION_MODEL  # Defaults to 'llava'
-            
-        free_ram_gb = psutil.virtual_memory().available / (1024 ** 3)
-        total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    @staticmethod
+    def generate_stream(prompt: str, history: list = None, file_contexts: list = None, images: list = None):
+        """Streams responses locally from an offline Ollama instance with multi-turn context memory."""
         
-        MIN_RAM_FOR_20B_GB = 14.0
-        
-        if free_ram_gb >= MIN_RAM_FOR_20B_GB:
-            print(f"[Model Allocation] Resource check passed ({free_ram_gb:.1f} GB free). Routing to 'gpt20b'.")
-            return "gpt20b"
-        else:
-            print(f"[Model Allocation] Resource constrained ({free_ram_gb:.1f} GB free / {total_ram_gb:.1f} GB total). Routing to default text model.")
-            return getattr(Config, 'DEFAULT_TEXT_MODEL', 'mistral')
+        if not file_contexts and not images and not history:
+            shortcut_reply = LLMService._match_shortcut(prompt)
+            if shortcut_reply:
+                yield shortcut_reply
+                return
 
-    def generate_stream(self, user_message: str, file_contexts: list, images: list):
-        selected_model = self._select_optimal_model(bool(images))
+        messages = [{"role": "system", "content": LLMService._get_system_instruction()}]
         
-        content_body = ""
-        
-        # 1. Query RAG vector store if initialized
-        if user_message and self.rag_service:
-            try:
-                retrieved_context = self.rag_service.query_context(user_message)
-                if retrieved_context:
-                    content_body += f"[RETRIEVED KNOWLEDGE BASE CONTEXT]:\n{retrieved_context}\n\n"
-            except Exception as e:
-                print(f"[RAG Retrieval Error]: {e}")
+        if history:
+            for turn in history:
+                role = turn.get("role", "user").lower()
+                content = turn.get("content", turn.get("text", ""))
+                if content:
+                    messages.append({"role": role, "content": content})
 
-        # 2. Add attached document contexts
+        full_content = prompt
         if file_contexts:
-            content_body += "[ATTACHED FILES DATA]:\n"
-            for idx, file_obj in enumerate(file_contexts, 1):
-                name = file_obj.get("name", f"file_{idx}.txt")
-                content = file_obj.get("content", "")[:Config.MAX_FILE_CHARS]
-                content_body += f"--- File {idx}: {name} ---\n{content}\n\n"
-        
-        content_body += user_message if user_message else "Analyze the attached inputs."
+            context_str = "\n\nATTACHED FILES & DATASETS:\n"
+            for idx, f in enumerate(file_contexts, 1):
+                context_str += f"\n--- File {idx}: {f.get('name', 'Doc')} ---\n{f.get('content', '')}\n"
+            full_content = f"{context_str}\n\nUSER PROMPT:\n{prompt}"
 
-        user_payload = {
-            "role": "user",
-            "content": content_body
+        messages.append({"role": "user", "content": full_content})
+
+        payload = {
+            "model": LLMService.LOCAL_MODEL,
+            "messages": messages,
+            "stream": True,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 4096
+            }
         }
 
-        if images:
-            user_payload["images"] = images
-
-        messages = [
-            {"role": "system", "content": self._get_system_instruction()},
-            user_payload
-        ]
-
         try:
-            response = ollama.chat(
-                model=selected_model,
-                messages=messages,
-                stream=True
-            )
-            for chunk in response:
-                token = chunk.get("message", {}).get("content", "")
-                if token:
-                    yield f"data: {token}\n\n"
+            response = requests.post(LLMService.OLLAMA_URL, json=payload, stream=True, timeout=120)
+            response.raise_for_status()
+
+            for line in response.iter_lines():
+                if line:
+                    data = json.loads(line.decode('utf-8'))
+                    chunk = data.get('message', {}).get('content', '')
+                    if chunk:
+                        yield chunk
+        except requests.exceptions.HTTPError as err:
+            yield f"Offline LLM Error ({err.response.status_code}): Check 'ollama list' model tag."
+        except requests.exceptions.ConnectionError:
+            yield "Error: Could not connect to local LLM. Ensure Ollama is running on http://localhost:11434."
         except Exception as e:
-            yield f"data: Error executing model '{selected_model}': {str(e)}\n\n"
+            yield f"Offline LLM Error: {str(e)}"
